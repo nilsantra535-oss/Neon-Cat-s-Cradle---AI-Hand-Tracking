@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Cat's Cradle - AI Hand Tracking</title>
+
+    <!-- MediaPipe dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <!-- p5.js dependency -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #03030a;
+            /* Deep midnight dark */
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            font-size: 1.5rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-shadow: 0 0 10px cyan, 0 0 20px magenta;
+            animation: pulse 1.5s infinite alternate;
+            text-align: center;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 0.6;
+                text-shadow: 0 0 10px cyan;
+            }
+
+            100% {
+                opacity: 1;
+                text-shadow: 0 0 20px cyan, 0 0 30px magenta;
+            }
+        }
+
+        /* Video element is only used for camera feed, hidden from display */
+        #videoElement {
+            display: none;
+        }
+
+        /* Canvas is manipulated directly via p5.js */
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        .overlay {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 5;
+            pointer-events: none;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.1);
+        }
+
+        .overlay h1 {
+            margin: 0 0 10px 0;
+            font-size: 1.2rem;
+            color: cyan;
+            text-shadow: 0 0 5px cyan;
+        }
+
+        .overlay p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: #ddd;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading">Initializing AI Models...<br><span style="font-size: 0.8rem; color: #aaa;">Please allow camera
+            access</span></div>
+
+    <div class="overlay">
+        <h1>Neon Cat's Cradle</h1>
+        <p>Bring both hands into the frame to weave strings.</p>
+    </div>
+
+    <video id="videoElement" autoplay playsinline></video>
+
+    <script>
+        let videoElement;
+        let handsModel;
+        let camera;
+        let detections = null;
+        let isLoaded = false;
+
+        const TIPS = [4, 8, 12, 16, 20]; // Thumb, Index, Middle, Ring, Pinky
+
+        function setup() {
+            createCanvas(windowWidth, windowHeight);
+
+            videoElement = document.getElementById('videoElement');
+
+            // Initialize MediaPipe Hands
+            handsModel = new Hands({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }
+            });
+
+            handsModel.setOptions({
+                maxNumHands: 2,
+                modelComplexity: 1, // 1 is a good balance of speed/accuracy
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.7
+            });
+
+            handsModel.onResults(onResults);
+
+            // Initialize Camera
+            camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await handsModel.send({ image: videoElement });
+                },
+                width: 1280,
+                height: 720
+            });
+            camera.start();
+        }
+
+        function windowResized() {
+            resizeCanvas(windowWidth, windowHeight);
+        }
+
+        function onResults(results) {
+            if (!isLoaded) {
+                document.getElementById('loading').style.display = 'none';
+                isLoaded = true;
+            }
+            detections = results;
+        }
+
+        function draw() {
+            background(3, 3, 10); // Very dark blue/black
+
+            if (!isLoaded || !detections) return;
+
+            // Flip the entire canvas horizontally so it acts like a mirror
+            push();
+            translate(width, 0);
+            scale(-1, 1);
+
+            let vW = videoElement.videoWidth;
+            let vH = videoElement.videoHeight;
+
+            if (vW === 0 || vH === 0) {
+                pop();
+                return;
+            }
+
+            // Calculate object-fit: cover dimensions
+            let vRatio = vW / vH;
+            let wRatio = width / height;
+            let drawW, drawH, drawX, drawY;
+
+            if (vRatio > wRatio) {
+                drawH = height;
+                drawW = vW * (height / vH);
+                drawX = (width - drawW) / 2;
+                drawY = 0;
+            } else {
+                drawW = width;
+                drawH = vH * (width / vW);
+                drawX = 0;
+                drawY = (height - drawH) / 2;
+            }
+
+            // Draw video feed
+            if (videoElement.readyState >= 2) {
+                drawingContext.drawImage(videoElement, drawX, drawY, drawW, drawH);
+                // Removed dark futuristic overlay on top of the video feed to keep normal brightness
+
+            }
+
+            // Draw hand tracking elements
+            if (detections.multiHandLandmarks && detections.multiHandLandmarks.length > 0) {
+
+                // Draw joints for each detected hand
+                for (let i = 0; i < detections.multiHandLandmarks.length; i++) {
+                    drawHand(detections.multiHandLandmarks[i], drawW, drawH, drawX, drawY);
+                }
+
+                // If two hands are detected, draw the cat's cradle strings between them
+                if (detections.multiHandLandmarks.length >= 2) {
+                    drawCatsCradle(detections.multiHandLandmarks[0], detections.multiHandLandmarks[1], drawW, drawH, drawX, drawY);
+                }
+            }
+
+            pop();
+        }
+
+        function drawHand(landmarks, drawW, drawH, drawX, drawY) {
+            for (let i = 0; i < landmarks.length; i++) {
+                let x = drawX + landmarks[i].x * drawW;
+                let y = drawY + landmarks[i].y * drawH;
+
+                if (TIPS.includes(i)) {
+                    // Pulsing effect using millis()
+                    let pulse = map(sin(millis() * 0.005 + i), -1, 1, 10, 25);
+
+                    // Rainbow color shifting for tips
+                    let hue = (millis() * 0.05 + i * 20) % 360;
+                    colorMode(HSB);
+                    let tipColor = color(hue, 80, 100);
+
+                    drawingContext.shadowBlur = 20;
+                    drawingContext.shadowColor = tipColor.toString();
+
+                    // Core
+                    noStroke();
+                    fill(255);
+                    circle(x, y, 10);
+
+                    // Outer decorative ring
+                    noFill();
+                    stroke(tipColor);
+                    strokeWeight(3);
+                    circle(x, y, pulse);
+
+                    colorMode(RGB); // reset
+                } else {
+                    drawingContext.shadowColor = '#00ffff';
+                    drawingContext.shadowBlur = 10;
+                    noStroke();
+                    fill(0, 255, 255, 120);
+                    circle(x, y, 6);
+                }
+            }
+            drawingContext.shadowBlur = 0;
+        }
+
+        function drawCatsCradle(hand1, hand2, drawW, drawH, drawX, drawY) {
+            colorMode(HSB);
+            let timeHue = (millis() * 0.02) % 360; // Base shifting color
+
+            for (let i = 0; i < TIPS.length; i++) {
+                let p1 = hand1[TIPS[i]];
+                let p2 = hand2[TIPS[i]];
+
+                let x1 = drawX + p1.x * drawW;
+                let y1 = drawY + p1.y * drawH;
+                let x2 = drawX + p2.x * drawW;
+                let y2 = drawY + p2.y * drawH;
+
+                let d = dist(x1, y1, x2, y2);
+                let maxD = dist(0, 0, drawW, drawH) * 0.7;
+
+                let thickness = map(d, 0, maxD, 8, 1);
+                thickness = constrain(thickness, 1, 8);
+
+                // Beautiful animated gradient based on distance and time
+                let hue1 = (timeHue + i * 40) % 360;
+                let hue2 = (timeHue + i * 40 + 120) % 360;
+
+                let ratio = constrain(d / maxD, 0, 1);
+                let c1 = color(hue1, 90, 100);
+                let c2 = color(hue2, 90, 100);
+                let c = lerpColor(c1, c2, ratio);
+
+                // Pulsing glow
+                drawingContext.shadowBlur = map(sin(millis() * 0.01 + i), -1, 1, 15, 40);
+                drawingContext.shadowColor = c.toString();
+
+                stroke(c);
+                strokeWeight(thickness);
+                line(x1, y1, x2, y2);
+
+                // Web effect cross strings (multiple)
+                let nextP2 = hand2[TIPS[(i + 1) % TIPS.length]];
+                let nx2 = drawX + nextP2.x * drawW;
+                let ny2 = drawY + nextP2.y * drawH;
+
+                let cCross = color((hue1 + 40) % 360, 80, 100);
+                stroke(cCross);
+                drawingContext.shadowColor = cCross.toString();
+                strokeWeight(thickness * 0.5);
+                line(x1, y1, nx2, ny2);
+
+                let prevP2 = hand2[TIPS[(i + 4) % TIPS.length]];
+                let px2 = drawX + prevP2.x * drawW;
+                let py2 = drawY + prevP2.y * drawH;
+
+                let cCross2 = color((hue1 + 320) % 360, 80, 100);
+                stroke(cCross2);
+                drawingContext.shadowColor = cCross2.toString();
+                strokeWeight(thickness * 0.3);
+                line(x1, y1, px2, py2);
+
+                // If fingers are touching/very close, draw a decorative starburst
+                if (d < 50) {
+                    drawStarburst((x1 + x2) / 2, (y1 + y2) / 2, c);
+                }
+            }
+            colorMode(RGB);
+            drawingContext.shadowBlur = 0;
+        }
+
+        // Starburst particle effect when fingertips touch
+        function drawStarburst(x, y, c) {
+            push();
+            translate(x, y);
+            rotate(millis() * 0.002);
+            stroke(c);
+            strokeWeight(2);
+            for (let i = 0; i < 8; i++) {
+                rotate(PI / 4);
+                let len = map(sin(millis() * 0.02 + i), -1, 1, 10, 35);
+                line(0, 0, len, 0);
+
+                // little glowing dots at end of starburst
+                noStroke();
+                fill(c);
+                circle(len, 0, 4);
+                stroke(c);
+            }
+            pop();
+        }
+    </script>
+</body>
+
+</html>
