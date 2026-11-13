@@ -20,5 +20,5 @@ An interactive web-based creative coding project built using **p5.js** and **Med
 ---
 
 ## How to Run Locally
-1. Clone the repository:
+1. Clone the repository:-
   
